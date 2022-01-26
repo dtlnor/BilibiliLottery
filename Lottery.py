@@ -2,6 +2,10 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import random
+from threading import Timer
+import time
+import sys
+import io
 
 #Core Page
 #https://api.vc.bilibili.com/dynamic_repost/v1/dynamic_repost/repost_detail?dynamic_id=265215506136622321
@@ -50,7 +54,7 @@ def GetPagesCycle(url):
         #偏移量增加，生成下一页的url
         offsetUrl = url + '&offset=' + str(offset)
         currentPage = GetOnePage(offsetUrl)
-        print(currentPage)
+        #print(currentPage)
         hasMore = currentPage[0]
         retCode = currentPage[1]
         offset = currentPage[2]
@@ -64,21 +68,37 @@ def GetOneLuckyDog(uidList):
     luckyNum = random.randint(0, listSize - 1)
     return uidList[luckyNum]
 
+def loop_func(func, second):
+ #每隔second秒执行func函数
+    while True:
+          func()
+          time.sleep(second)
+
+def outFunc():
+    url = 'https://api.vc.bilibili.com/dynamic_repost/v1/dynamic_repost/repost_detail?dynamic_id=' + '539142451483532317'
+    # 539142451483532317
+    repostList = list(dict.fromkeys(GetPagesCycle(url)))
+    #print("what")
+    print(repostList)
+    print('成功获取转发列表')
+
+    filename = str(time.time())+"-alluid.txt"
+    with io.open(filename, mode="w") as resulttxt:
+        for useruid in repostList:
+            resulttxt.write(str(useruid)+"\n")
+          
 print('Bilibili转发抽奖工具v1.0')
 print('Bilibili@鱼丸子_Official')
+  
+loop_func(outFunc, 60)
 
-url = 'https://api.vc.bilibili.com/dynamic_repost/v1/dynamic_repost/repost_detail?dynamic_id=' + '539142451483532317'
-# 539142451483532317
-repostList = list(dict.fromkeys(GetPagesCycle(url)))
-print("what")
-print(repostList)
-print('成功获取转发列表')
-generateNum = int(input('输入随机数量'))
+def random(repostList):
+    generateNum = int(input('输入随机数量'))
 
-print('获取到的用户')
-for i in range(0, generateNum):
-    uidGet = GetOneLuckyDog(repostList)
-    userPageUrl = 'https://space.bilibili.com/' + str(uidGet)
-    print(userPageUrl)
+    print('获取到的用户')
+    for i in range(0, generateNum):
+        uidGet = GetOneLuckyDog(repostList)
+        userPageUrl = 'https://space.bilibili.com/' + str(uidGet)
+        print(userPageUrl)
 
-input()
+    input()
