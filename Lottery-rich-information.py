@@ -6,14 +6,22 @@ from threading import Timer
 import time
 import sys
 import io
+import datetime
+import re
+import os
 
 #Core Page
 #https://api.vc.bilibili.com/dynamic_repost/v1/dynamic_repost/repost_detail?dynamic_id=265215506136622321
 
+def TranslateTs(value, isMs = True):
+    factor = 1000.0 if isMs else 1.0
+    return datetime.datetime.fromtimestamp(value/factor)
+
+# print(TranslateTs(1673884800, False))
 #获取单页的转发列表（20个）
 #返回列表：[0]是return code，[1]是获取到的列表
 def GetOnePage(url):
-    resList = []
+    resList :list[dict] = list()
 
     response = requests.get(url)
     resJson = json.loads(response.text)
@@ -36,29 +44,41 @@ def GetOnePage(url):
         for item in items:
             itemJson = json.loads(item['card'])
             #定位到UID
-            resList.append([itemJson['user']['uid'], itemJson['user']['uname'],itemJson['item']['content'], item['desc']['dynamic_id'], item['desc']['user_profile']['info']['face']])
+            if item['desc']['timestamp'] > 1673884800 or not (('12' in itemJson['item']['content'] or '十二' in itemJson['item']['content']) and ('24' in itemJson['item']['content'] or '二十四' in itemJson['item']['content'])):
+                # print( TranslateTs(item['desc']['timestamp'], False), [itemJson['user']['uid'], itemJson['user']['uname'],itemJson['item']['content'], item['desc']['dynamic_id'], item['desc']['user_profile']['info']['face']])
+                continue
 
-    return [has_more, rescode, offset, resList]
+            resList.append({
+                'uid': itemJson['user']['uid'],
+                'uname': itemJson['user']['uname'],
+                'content': itemJson['item']['content'],
+                'dynamic_id': item['desc']['dynamic_id'],
+                'icon_url': item['desc']['user_profile']['info']['face']})
+
+    return {"has_more":has_more,
+    "rescode":rescode,
+    "offset":offset,
+    "resList":resList}
 
 def GetPagesCycle(url):
-    allUIDSet = []
+    allUIDSet :list[dict] = []
 
     #获取第一页
     firstPageGet = GetOnePage(url)
-    hasMore = firstPageGet[0]
-    retCode = firstPageGet[1]
-    offset = firstPageGet[2]
-    allUIDSet += firstPageGet[3]
+    hasMore = firstPageGet["has_more"]
+    retCode = firstPageGet["rescode"]
+    offset = firstPageGet["offset"]
+    allUIDSet += firstPageGet["resList"]
     offsetIndex = 20
     while retCode == 0 and hasMore == 1:
         #偏移量增加，生成下一页的url
         offsetUrl = url + '&offset=' + str(offset)
         currentPage = GetOnePage(offsetUrl)
         #print(currentPage)
-        hasMore = currentPage[0]
-        retCode = currentPage[1]
-        offset = currentPage[2]
-        allUIDSet += currentPage[3]
+        hasMore = currentPage["has_more"]
+        retCode = currentPage["rescode"]
+        offset = currentPage["offset"]
+        allUIDSet += currentPage["resList"]
         
     return allUIDSet
 
@@ -75,35 +95,62 @@ def loop_func(func, second):
           time.sleep(second)
 
 def outFunc():
-    url = 'https://api.vc.bilibili.com/dynamic_repost/v1/dynamic_repost/repost_detail?dynamic_id=' + '613698174599991792'
+    url = 'https://api.vc.bilibili.com/dynamic_repost/v1/dynamic_repost/repost_detail?dynamic_id=' + '751243286979543065'
     # 539142451483532317
     repostList = GetPagesCycle(url)#list(dict.fromkeys(GetPagesCycle(url)))
     #print("what")
+    
+    for repost in list(repostList):
+        jsonName = "C:\\Users\\dtlnor\\Documents\\GitHub\\BilibiliLotteryMod\\userRelationship\\"+str(repost["uid"])+".json"
+        if not os.path.exists(jsonName):
+
+            cookies = {
+            }
+            headers = {
+            }
+            params = {
+                'mid': str(repost["uid"]),
+            }
+            response = requests.get('https://api.bilibili.com/x/space/acc/relation', params=params, cookies=cookies, headers=headers)
+            resJson = json.loads(response.text)
+            json.dump(resJson, open(jsonName,"w",encoding='utf-8'), ensure_ascii=False, indent=4)
+        
+        resJson = json.load(open(jsonName, "r", encoding='utf-8'))
+        if resJson["data"]["be_relation"]["attribute"] not in [1,2,6]:
+            print("Fail:",repost)
+            repostList.remove(repost)
+
+            # print("Fail:",repost)
+        # else:
+        #     if 9979698 not in attentions:
+        #         print("Fail:",repost)
+        #         repostList.remove(repost)
+        
     print(repostList)
     print('成功获取转发列表')
 
     filename = str(time.time())+"-alluid.txt"
     htmlname = str(time.time())+"-alluid.html"
     with io.open(filename, mode="w", encoding="utf-8") as resulttxt:
-        for repost in sorted(repostList, key = lambda x: x[0]):
+        for repost in sorted(repostList, key = lambda x: x["uid"]):
             resulttxt.write(str(repost)+"\n")
             
     with io.open(htmlname, mode="w", encoding="utf-8") as resulttxt:
-        for repost in sorted(repostList, key = lambda x: x[0]):
+        for repost in sorted(repostList, key = lambda x: x["uid"]):
             content = ""
-            content = content+"<img src=\""+str(repost[4])+"\" alt=\"icon\" width=\"50\" height=\"50\">"
-            content = content+" <a href=\""+"https://space.bilibili.com/"+str(repost[0])+"\">@"+repost[1]+"</a>"
-            content = content+" <a href=\""+"https://t.bilibili.com/"+str(repost[3])+"\">: "+repost[2]+"</a>"+"<br>\n"
+            content = content+"<img src=\""+str(repost["icon_url"])+"\" alt=\"icon\" width=\"50\" height=\"50\">"
+            content = content+" <a href=\""+"https://space.bilibili.com/"+str(repost["uid"])+"\">@"+repost["uname"]+"</a>"
+            content = content+" <a href=\""+"https://t.bilibili.com/"+str(repost["dynamic_id"])+"\">: "+repost["content"]+"</a>"+"<br>\n"
             resulttxt.write(content)
             
-#loop_func(outFunc, 3600)
+# loop_func(outFunc, 3600)
 
 #print('Bilibili转发抽奖工具v1.0')
 #print('Bilibili@鱼丸子_Official')
 
 import ast
 contents = []
-with io.open("1642003402.784791-alluid.txt", mode="r", encoding="utf-8") as resulttxt:
+with io.open("1673938372.6492927-alluid.txt", mode="r", encoding="utf-8") as resulttxt:
     for line in resulttxt:
         contents.append(ast.literal_eval(line))
 
@@ -206,68 +253,82 @@ blacklist = set([
     438420242,
 
     ])
+"""抽奖号"""
 
 whiteList = set()
+"""中奖号"""
 
-with io.open("fixed.txt", mode="r", encoding="utf-8") as resulttxt:
-    for line in resulttxt:
-        whiteList.add(int(line.strip()))
-with io.open("fixed-nonFilter.txt", mode="r", encoding="utf-8") as resulttxt:
-    for line in resulttxt:
-        whiteList.add(int(line.strip()))
+# fixed = 中奖了的，但因为没满50人所以先放在这里保留
+if os.path.exists("fixed.txt"):
+    with io.open("fixed.txt", mode="r", encoding="utf-8") as resulttxt:
+        for line in resulttxt:
+            whiteList.add(int(line.strip()))
+else:
+    io.open("fixed.txt","w")
+
+# 刚刚抽出来但还没有查看有没有抽奖号的
+if os.path.exists("fixed-nonFilter.txt"):
+    with io.open("fixed-nonFilter.txt", mode="r", encoding="utf-8") as resulttxt:
+        for line in resulttxt:
+            whiteList.add(int(line.strip()))
+else:
+    io.open("fixed-nonFilter.txt","w")
 
 whiteList = whiteList - blacklist
+
+# 输出目前的中奖人
 with io.open("current.html", mode="w", encoding="utf-8") as resulttxt:
-    for repost in sorted(contents, key = lambda x: x[0]):
-        if repost[0] in whiteList:
+    for repost in sorted(contents, key = lambda x: x["uid"]):
+        if repost["uid"] in whiteList:
             content = ""
-            content = content+"<img src=\""+str(repost[4])+"\" alt=\"icon\" width=\"50\" height=\"50\">"
-            content = content+" <a href=\""+"https://space.bilibili.com/"+str(repost[0])+"\">@"+repost[1]+"</a>"
-            content = content+" <a href=\""+"https://t.bilibili.com/"+str(repost[3])+"\">: "+repost[2]+"</a>"+"<br>\n"
+            content = content+"<img src=\""+str(repost["icon_url"])+"\" alt=\"icon\" width=\"50\" height=\"50\">"
+            content = content+" <a href=\""+"https://space.bilibili.com/"+str(repost["uid"])+"\">@"+repost["uname"]+"</a>"
+            content = content+" <a href=\""+"https://t.bilibili.com/"+str(repost["dynamic_id"])+"\">: "+repost["content"]+"</a>"+"<br>\n"
             resulttxt.write(content)
 with io.open("current.txt", mode="w", encoding="utf-8") as resulttxt:
-    for repost in sorted(contents, key = lambda x: x[0]):
-        if repost[0] in whiteList:
+    for repost in sorted(contents, key = lambda x: x["uid"]):
+        if repost["uid"] in whiteList:
             resulttxt.write(str(repost)+"\n")
 
-blacklist = blacklist.union(whiteList)
+# 输出未处理的用户
+bypassList = blacklist.union(whiteList)
 with io.open("result.html", mode="w", encoding="utf-8") as resulttxt:
-    for repost in sorted(contents, key = lambda x: x[2]):
-        if not(repost[0] in blacklist):
+    for repost in sorted(contents, key = lambda x: x["content"]):
+        if (repost["uid"] not in bypassList):
             content = ""
-            content = content+"<img src=\""+str(repost[4])+"\" alt=\"icon\" width=\"50\" height=\"50\">"
-            content = content+" <a href=\""+"https://space.bilibili.com/"+str(repost[0])+"\">@"+repost[1]+"</a>"
-            content = content+" <a href=\""+"https://t.bilibili.com/"+str(repost[3])+"\">: "+repost[2]+"</a>"+"<br>\n"
+            content = content+"<img src=\""+str(repost["icon_url"])+"\" alt=\"icon\" width=\"50\" height=\"50\">"
+            content = content+" <a href=\""+"https://space.bilibili.com/"+str(repost["uid"])+"\">@"+repost["uname"]+"</a>"
+            content = content+" <a href=\""+"https://t.bilibili.com/"+str(repost["dynamic_id"])+"\">: "+repost["content"]+"</a>"+"<br>\n"
             resulttxt.write(content)
 userUid = set()
 for repost in contents:
-    userUid.add(repost[0])
+    userUid.add(repost["uid"])
 
-
-userUid = userUid - blacklist
+userUid = set([repost["uid"] for repost in contents]) - bypassList
 #generateNum = int(input('输入随机数量'))
 uidResult = []
 print('获取到的用户')
 uidResult = list(userUid)
 random.shuffle(uidResult)
 
-uidResult = uidResult[0:50]
+uidResult = uidResult[0:40]
 print(len(uidResult))
 
 repostUserList = []
 for repost in contents:
-    if repost[0] in  uidResult:
+    if repost["uid"] in  uidResult:
         repostUserList.append(repost)
 
+# 抽中的剩下的人
 with io.open("LuckyResult.html", mode="w", encoding="utf-8") as resulttxt:
     for repost in repostUserList:
         content = ""
-        content = content+"<img src=\""+str(repost[4])+"\" alt=\"icon\" width=\"50\" height=\"50\">"
-        content = content+" <a href=\""+"https://space.bilibili.com/"+str(repost[0])+"\">@"+repost[1]+"</a>"
-        content = content+" <a href=\""+"https://t.bilibili.com/"+str(repost[3])+"\">: "+repost[2]+"</a>"+"<br>\n"
+        content = content+"<img src=\""+str(repost["icon_url"])+"\" alt=\"icon\" width=\"50\" height=\"50\">"
+        content = content+" <a href=\""+"https://space.bilibili.com/"+str(repost["uid"])+"\">@"+repost["uname"]+"</a>"
+        content = content+" <a href=\""+"https://t.bilibili.com/"+str(repost["dynamic_id"])+"\">: "+repost["content"]+"</a>"+"<br>\n"
         resulttxt.write(content)
 
-
+# 输出中奖列表
 contents = []
 with io.open("current.txt", mode="r", encoding="utf-8") as resulttxt:
     for line in resulttxt:
@@ -275,10 +336,10 @@ with io.open("current.txt", mode="r", encoding="utf-8") as resulttxt:
 random.shuffle(contents)
 contextString = "恭喜以下用户抽中键帽以及啪叽： "
 for repost in contents[0:3]:
-    contextString = contextString + " @"+repost[1]
+    contextString = contextString + " @"+repost["uname"]
 contextString = contextString+"\n恭喜以下用户抽中啪叽： "
 for repost in contents[3:-1]:
-    contextString = contextString + " @"+repost[1]
+    contextString = contextString + " @"+repost["uname"]
 print(contextString)
 
 input("enter to exit")
