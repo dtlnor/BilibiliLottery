@@ -252,6 +252,21 @@ blacklist = set([
     402041416,
     438420242,
 
+
+    3847304,
+    9163635,
+    15800520,
+    46717570,
+    91283903,
+    94638937,
+    96622464,
+    151224331,
+    382611112,
+    3493110657058870,
+
+    244096790,
+    624194524,
+    3493110493481663,
     ])
 """抽奖号"""
 
@@ -319,7 +334,7 @@ for repost in contents:
     if repost["uid"] in  uidResult:
         repostUserList.append(repost)
 
-# 抽中的剩下的人
+# 输出此次抽中的剩下的人（排除了已经抽到的人）
 with io.open("LuckyResult.html", mode="w", encoding="utf-8") as resulttxt:
     for repost in repostUserList:
         content = ""
@@ -334,8 +349,11 @@ with io.open("current.txt", mode="r", encoding="utf-8") as resulttxt:
     for line in resulttxt:
         contents.append(ast.literal_eval(line))
 random.shuffle(contents)
-contextString = "恭喜以下用户抽中键帽以及啪叽： "
-for repost in contents[0:3]:
+contextString = "恭喜以下用户抽中一等奖： "
+for repost in contents[0:1]:
+    contextString = contextString + " @"+repost["uname"]
+contextString = contextString+"\n恭喜以下用户抽中二等奖： "
+for repost in contents[1:3]:
     contextString = contextString + " @"+repost["uname"]
 contextString = contextString+"\n恭喜以下用户抽中啪叽： "
 for repost in contents[3:-1]:
